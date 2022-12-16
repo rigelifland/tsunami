@@ -13,10 +13,10 @@ classifiers=[
     'License :: OSI Approved :: MIT License',
     'Natural Language :: English',
     'Programming Language :: Python :: 3',
-    'Programming Language :: Python :: 3.6',
     'Programming Language :: Python :: 3.7',
     'Programming Language :: Python :: 3.8',
     'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
 ]
 packages = [
     { include = "tsunami" },
@@ -24,7 +24,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.6.2,<4.0"
+python = ">=3.7.9,<4.0"
 click = "8.0.1"
 
 black  = { version = "^21.5b2", optional = true}
@@ -37,7 +37,8 @@ pytest-cov  = { version = "^2.12.0", optional = true}
 tox  = { version = "^3.20.1", optional = true}
 virtualenv  = { version = "^20.2.2", optional = true}
 pip  = { version = "^20.3.1", optional = true}
-mkdocs  = { version = "^1.1.2", optional = true}
+Jinja2 = { version = "3.0.3", optional = true }
+mkdocs  = { version = "^1.4.2", optional = true}
 mkdocs-include-markdown-plugin  = { version = "^1.0.0", optional = true}
 mkdocs-material  = { version = "^6.1.7", optional = true}
 mkdocstrings  = { version = "^0.15.2", optional = true}
@@ -62,6 +63,7 @@ test = [
 dev = ["tox", "pre-commit", "virtualenv", "pip", "twine", "toml", "bump2version"]
 
 doc = [
+    "Jinja2",
     "mkdocs",
     "mkdocs-include-markdown-plugin",
     "mkdocs-material",
