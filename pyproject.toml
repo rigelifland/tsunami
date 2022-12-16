@@ -26,6 +26,15 @@ packages = [
 [tool.poetry.dependencies]
 python = ">=3.7.9,<4.0"
 click = "8.0.1"
+h5py = "<3.4.0"
+numpy = [
+    {version = "<1.22", python = "<3.8"},
+    {version = "^1.22", python = "^3.8"}
+]
+scipy = [
+    {version = "<1.9.3", python = "<3.8"},
+    {version = "^1.9.3", python = "^3.8"}
+]
 
 black  = { version = "^21.5b2", optional = true}
 isort  = { version = "^5.8.0", optional = true}
