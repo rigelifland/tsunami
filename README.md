@@ -8,7 +8,7 @@
 
 
 
-A library for visualizing large wavs
+A library for storing large wavs
 
 
 * Documentation: <https://rigelifland.github.io/tsunami>

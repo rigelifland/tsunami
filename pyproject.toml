@@ -3,7 +3,7 @@
 name = "tsunami"
 version = "0.1.0"
 homepage = "https://github.com/rigelifland/tsunami"
-description = "A library for visualizing large wavs."
+description = "A library for storing large wavs."
 authors = ["Rigel Ifland <rigel.ifland@gmail.com>"]
 readme = "README.md"
 license =  "MIT"
