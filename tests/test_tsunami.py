@@ -7,8 +7,12 @@ import pytest
 
 import tsunami as tsu
 
-TEST_FILEPATH = "tests/test.tsu"
 SAMPLERATE = 48000
+
+
+@pytest.fixture(scope="session")
+def test_data_dir(tmp_path_factory):
+    return tmp_path_factory.mktemp("data") / "test.h5"
 
 
 @pytest.fixture
@@ -23,10 +27,10 @@ def test_recording():
     return (signal, meta)
 
 
-@pytest.fixture
-def file_handle():
+@pytest.fixture(scope="session", autouse=True)
+def file_handle(test_data_dir):
     """An h5 file handle."""
-    return h5py.File(TEST_FILEPATH, 'w')
+    return h5py.File(test_data_dir, 'w')
 
 
 @pytest.fixture
