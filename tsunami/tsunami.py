@@ -2,80 +2,49 @@
 import json
 import os
 import uuid
-from typing import List
+from typing import List, Tuple
 
 import h5py
+import numpy as np
 from typing_extensions import Literal
 
 
 class File:
+    """Representation of a Tsunami File.
+
+    Attributes:
+        filepath: The path to the file represented by the object.
+        mode: The mode which the file was opened with.
+        recordings: A list of recording objects.
+    """
+
     def __init__(self, filepath: str, mode: Literal["r", "w", "a"] = None):
+        """Inits the File object.
+
+        Args:
+            filepath: The path to the file to open (or create).
+            mode: The mode in which to open the file.
+        """
         self.filepath = filepath
         self.mode = mode or ('r' if os.path.exists(self.filepath) else 'w')
-        self.handle = h5py.File(self.filepath, mode=self.mode)
+        self._handle = h5py.File(self.filepath, mode=self.mode)
         self.recordings: List[Recording] = []
 
         if self.mode == 'w':
-            self.create()
+            self._create()
         else:
-            self.load()
+            self._load()
 
-    def create(self):
-        self.handle.create_group("recordings")
+    def _create(self):
+        """Initialize the file."""
+        self._handle.create_group("recordings")
 
-    def load(self):
-        for r in self.handle['recordings']:
-            self.recordings.append(Recording(self.handle['recordings'][r]))
+    def _load(self):
+        """Load all the recording objects from the file-handle."""
+        for r in self._handle['recordings']:
+            self.recordings.append(Recording(self._handle['recordings'][r]))
 
-    def create_recording(self, *args, **kwargs):
-        rec_handle = self.handle["recordings"].create_group(str(uuid.uuid4()))
-        self.recordings.append(Recording(rec_handle, *args, **kwargs))
-
-
-class Recording:
-    def __init__(self, handle: h5py.Group, *args, **kwargs):
-        self.handle = handle
-        self.raw: Signal
-        self.start_time: float
-        self.signals: List[Signal] = []
-
-        if "raw" not in handle:
-            self.create(*args, **kwargs)
-        else:
-            self.load()
-
-    def create(self, start_time: float = 0, *args, **kwargs):
-        self.start_time = start_time
-        self.handle.attrs['meta'] = json.dumps(dict(start_time=start_time))
-
-        raw_handle = self.handle.create_group("raw")
-        self.raw = Signal(raw_handle, start_time=start_time, *args, **kwargs)
-        self.handle.create_group("signals")
-
-    def load(self):
-        meta = json.loads(self.handle.attrs['meta'])
-        self.start_time = meta['start_time']
-
-        self.raw = Signal(self.handle["raw"])
-        for s in self.handle['signals']:
-            self.signals.append(self.handle['signals'][s])
-
-    def append(self, data):
-        self.raw.append(data)
-
-    def read_signal(self, name='raw', start_time=None, stop_time=None, samplerate=None):
-        pass
-
-
-class Signal:
-    def __init__(self, handle: h5py.Group, *args, **kwargs):
-        self.handle = handle
-        if 'signal_data' not in handle:
-            self.create(*args, **kwargs)
-        else:
-            self.load()
-
-    def create(
+    def create_recording(
         self,
         samplerate: int,
         start_time: float = 0,
@@ -84,6 +53,174 @@ class Signal:
         name: str = '',
         chunk_size: int = 0,
     ):
+        """Creates a new recording.
+
+        Args:
+            samplerate: The sampleing frequency of the recording.
+            start_time: The start time of the recording as a unix timestamp (in seconds).
+            channels: The number of channels in the recording.
+            dtype: The dtype of the data.
+            name: The name of the recording.
+            chunk_size: The size of chunks
+        """
+        chunk_size = chunk_size or samplerate * 60
+        rec_handle = self._handle["recordings"].create_group(str(uuid.uuid4()))
+        self.recordings.append(
+            Recording(
+                rec_handle,
+                samplerate=samplerate,
+                start_time=start_time,
+                channels=channels,
+                dtype=dtype,
+                name=name,
+                chunk_size=chunk_size,
+            )
+        )
+
+
+class Recording:
+    """Representation of a recording.
+
+    A Recording object contains interfaces to the raw recorded data, as well as
+    all the processed transformations of the data.
+
+    Attributes:
+        start_time: The start time of the recording as a unix timestamp (in seconds).
+        raw: A Signal object containing the raw recorded data.
+        signals: A list of Signal object containing transformations of the data.
+    """
+
+    def __init__(
+        self,
+        handle: h5py.Group,
+        samplerate: int,
+        start_time: float = 0,
+        channels: int = 1,
+        dtype: str = 'float',
+        name: str = '',
+        chunk_size: int = 0,
+    ):
+        """Initialize the Recording object.
+
+        Args:
+            handle: The h5 group in which to store the recording.
+            samplerate: The sampleing frequency of the recording.
+            start_time: The start time of the recording as a unix timestamp (in seconds).
+            channels: The number of channels in the recording.
+            dtype: The dtype of the data.
+            name: The name of the recording.
+            chunk_size: The size of chunks
+        """
+        self._handle = handle
+        self.start_time: float
+        self.raw: Signal
+        self.signals: List[Signal] = []
+
+        if "raw" not in handle:
+            self._create(
+                samplerate=samplerate,
+                start_time=start_time,
+                channels=channels,
+                dtype=dtype,
+                name=name,
+                chunk_size=chunk_size,
+            )
+        else:
+            self._load()
+
+    def _create(
+        self,
+        samplerate: int,
+        start_time: float = 0,
+        channels: int = 1,
+        dtype: str = 'float',
+        name: str = '',
+        chunk_size: int = 0,
+    ):
+        """Create structures in the file for recording data."""
+        self.start_time = start_time
+        self._handle.attrs['meta'] = json.dumps(dict(start_time=start_time))
+
+        raw_handle = self._handle.create_group("raw")
+        self.raw = Signal(
+            raw_handle,
+            samplerate=samplerate,
+            start_time=start_time,
+            channels=channels,
+            dtype=dtype,
+            name=name,
+            chunk_size=chunk_size,
+        )
+        self._handle.create_group("signals")
+
+    def _load(self):
+        """Load the meta-data and raw data interface from the group handle."""
+        meta = json.loads(self._handle.attrs['meta'])
+        self.start_time = meta['start_time']
+
+        self.raw = Signal(self._handle["raw"])
+        for s in self._handle['signals']:
+            self.signals.append(self._handle['signals'][s])
+
+    def append(self, data: np.ndarray):
+        """Append data to the end of the raw-data signal.
+
+        Args:
+            data: A numpy array with shape (nsamples, nchannels).
+        """
+        self.raw.append(data)
+
+
+class Signal:
+    """Representation of a timeseries signal.
+
+    A Signal object is an interface to timeseries data.
+    """
+
+    def __init__(
+        self,
+        handle: h5py.Group,
+        samplerate: int,
+        start_time: float = 0,
+        channels: int = 1,
+        dtype: str = 'float',
+        name: str = '',
+        chunk_size: int = 0,
+    ):
+        """Initialize the Signal object.
+
+        Args:
+            handle: The h5 group in which to store the signal.
+            samplerate: The sampleing frequency of the signal.
+            start_time: The start time of the recording as a unix timestamp (in seconds).
+            channels: The number of channels in the signal.
+            dtype: The dtype of the data.
+            name: The name of the signal.
+            chunk_size: The size of chunks
+        """
+        self._handle = handle
+        if 'signal_data' not in handle:
+            self._create(
+                samplerate=samplerate,
+                start_time=start_time,
+                channels=channels,
+                dtype=dtype,
+                name=name,
+                chunk_size=chunk_size,
+            )
+        else:
+            self._load()
+
+    def _create(
+        self,
+        samplerate: int,
+        start_time: float = 0,
+        channels: int = 1,
+        dtype: str = 'float',
+        name: str = '',
+        chunk_size: int = 0,
+    ):
+        """Create the data structures in the file for the signal data."""
         self.samplerate = samplerate
         self.start_time = start_time
         self.channels = channels
@@ -91,7 +228,7 @@ class Signal:
         self.name = name
         self.chunk_size = chunk_size or 60 * self.samplerate
 
-        self.handle.attrs['meta'] = json.dumps(
+        self._handle.attrs['meta'] = json.dumps(
             dict(
                 samplerate=self.samplerate,
                 start_time=self.start_time,
@@ -102,7 +239,7 @@ class Signal:
             )
         )
 
-        self.handle.create_dataset(
+        self._handle.create_dataset(
             'signal_data',
             shape=(0, channels),
             maxshape=(None, channels),
@@ -110,8 +247,9 @@ class Signal:
             chunks=(self.chunk_size, channels),
         )
 
-    def load(self):
-        meta = json.loads(self.handle.attrs['meta'])
+    def _load(self):
+        """Load the signal data from the group handle."""
+        meta = json.loads(self._handle.attrs['meta'])
         self.samplerate = meta['samplerate']
         self.start_time = meta['start_time']
         self.channels = meta['channels']
@@ -119,12 +257,27 @@ class Signal:
         self.name = meta['name']
 
     def append(self, data):
-        dset = self.handle['signal_data']
+        """Append data to the end of the signal data.
+
+        Args:
+            data: A numpy array with shape (nsamples, nchannels).
+        """
+        dset = self._handle['signal_data']
         dset.resize(dset.shape[0] + data.shape[0], axis=0)
         dset[-data.shape[0] :] = data.reshape(-1, self.channels)
 
-    def read(self, start_time=None, stop_time=None):
-        dset = self.handle['signal_data']
+    def read(self, start_time=None, stop_time=None) -> Tuple[np.ndarray, float]:
+        """Read data from the signal.
+
+        Args:
+            start_time: The first time requested
+            stop_time: The last time requested
+
+        Returns:
+            A tuple containing the data as a numpy array with shape (nsamples,
+            nchannels) and the start time as a unix timestamp (in seconds).
+        """
+        dset = self._handle['signal_data']
         start_time = start_time or self.start_time
         stop_time = stop_time or self.start_time + dset.shape[0] / self.samplerate
         samplerate = self.samplerate
