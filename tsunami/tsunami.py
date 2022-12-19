@@ -170,6 +170,19 @@ class Recording:
         """
         self.raw.append(data)
 
+    def read(self, start_time=None, stop_time=None) -> Tuple[np.ndarray, float]:
+        """Read data from the recording.
+
+        Args:
+            start_time: The first time requested
+            stop_time: The last time requested
+
+        Returns:
+            A tuple containing the data as a numpy array with shape (nsamples,
+            nchannels) and the start time as a unix timestamp (in seconds).
+        """
+        return self.raw.read(start_time=start_time, stop_time=stop_time)
+
 
 class Signal:
     """Representation of a timeseries signal.
