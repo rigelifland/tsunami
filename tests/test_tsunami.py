@@ -12,6 +12,7 @@ SAMPLERATE = 48000
 
 @pytest.fixture(scope="session")
 def test_data_dir(tmp_path_factory):
+    """Create a temporary dir that will be deleted after testing."""
     return tmp_path_factory.mktemp("data") / "test.h5"
 
 
