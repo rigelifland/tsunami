@@ -1,35 +1,49 @@
 #!/usr/bin/env python
 """Tests for `tsunami` package."""
 
+import h5py
+import numpy as np
 import pytest
-from click.testing import CliRunner
 
-from tsunami import cli
+import tsunami as tsu
+
+TEST_FILEPATH = "tests/test.tsu"
+SAMPLERATE = 48000
 
 
 @pytest.fixture
-def response():
-    """Sample pytest fixture.
-
-    See more at: http://doc.pytest.org/en/latest/fixture.html
-    """
-    # import requests
-    # return requests.get('https://github.com/audreyr/cookiecutter-pypackage')
-
-
-def test_content(response):
-    """Sample pytest test function with the pytest fixture as an argument."""
-    # from bs4 import BeautifulSoup
-    # assert 'GitHub' in BeautifulSoup(response.content).title.string
-    del response
+def test_recording():
+    signal = np.arange(SAMPLERATE).reshape(-1, 1)
+    meta = {
+        "start_time": 1647295200,
+        "samplerate": SAMPLERATE,
+        "channels": 1,
+    }
+    return (signal, meta)
 
 
-def test_command_line_interface():
-    """Test the CLI."""
-    runner = CliRunner()
-    result = runner.invoke(cli.main)
-    assert result.exit_code == 0
-    assert 'tsunami' in result.output
-    help_result = runner.invoke(cli.main, ['--help'])
-    assert help_result.exit_code == 0
-    assert '--help  Show this message and exit.' in help_result.output
+@pytest.fixture
+def file_handle():
+    return h5py.File(TEST_FILEPATH, 'w')
+
+
+@pytest.fixture
+def recording_handle(file_handle):
+    return file_handle.create_group('recording_handle')
+
+
+@pytest.fixture
+def signal_handle(file_handle):
+    return file_handle.create_group('signal_handle')
+
+
+def test_signal_read_write(signal_handle, test_recording):
+    data, meta = test_recording
+    sig = tsu.Signal(signal_handle, **meta)
+    sig.append(data)
+
+    returned_data, returned_start_time = sig.read(start_time=meta["start_time"])
+    assert (
+        abs(returned_start_time - meta["start_time"]) < 1 / meta["samplerate"]
+    ), "Returned start time is different than requested"
+    assert np.allclose(data, returned_data)
