@@ -1,7 +1,6 @@
 """Main module."""
 import json
 import os
-import uuid
 from typing import List, Optional, Tuple, Union
 
 import h5py
@@ -177,10 +176,10 @@ class Recording:
         """
         self._parent_handle = parent_handle
         self.signals: List[Signal] = []
-        self.name = name or f'Recording_{len(self.signals)}'
+        name = name or f'Recording_{len(parent_handle)}'
 
-        if self.name in self._parent_handle:
-            self._handle = self._parent_handle[self.name]
+        if name in self._parent_handle:
+            self._handle = self._parent_handle[name]
             self._params = json.loads(self._handle.attrs['params'])
 
             self._signals_handle = self._handle['signals']
@@ -202,6 +201,11 @@ class Recording:
                 chunk_size=chunk_size,
             )
             self.signals.append(raw)
+
+    @property
+    def name(self) -> str:
+        """Get the name."""
+        return self._params['name']
 
     @property
     def start_time(self) -> Union[float, int]:
@@ -257,6 +261,24 @@ class Recording:
                 return s
         return None
 
+    def read_signal(
+        self, signal_name: str, start_time: Union[float, int], end_time: Union[float, int]
+    ) -> Union[Tuple[np.ndarray, Union[float, int]], None]:
+        """Read from a given signal.
+
+        Args:
+            start_time: The starting time bound on the returned data.
+            end_time: The ending time bound on the returned data.
+
+        Returns:
+            A tuple containing the signal data, and the start_time. Returns None if no matching signal is found.
+        """
+        if self.contains_time(start_time) or self.contains_time(end_time):
+            sig = self.get_signal(signal_name)
+            if sig:
+                return sig.read(start_time, end_time)
+        return None
+
 
 class File:
     """Representation of a Tsunami File.
@@ -280,7 +302,7 @@ class File:
         self.recordings: List[Recording] = []
 
         if self.mode == 'w':
-            self._handle.create_group("recordings")
+            self._recordings_handle = self._handle.create_group("recordings")
         else:
             for r in self._handle['recordings']:
                 self.recordings.append(Recording(self._handle['recordings'][r]))
@@ -308,9 +330,8 @@ class File:
             raise ValueError("Recording exists already!")
 
         chunk_size = chunk_size or samplerate * 60
-        rec_handle = self._handle["recordings"].create_group(str(uuid.uuid4()))
         rec = Recording(
-            rec_handle,
+            self._recordings_handle,
             samplerate=samplerate,
             start_time=start_time,
             channels=channels,
@@ -337,7 +358,7 @@ class File:
         return None
 
     def read_signal(
-        self, start_time: Union[float, int], end_time: Union[float, int]
+        self, signal_name: str, start_time: Union[float, int], end_time: Union[float, int]
     ) -> List[Tuple[np.ndarray, Union[float, int]]]:
         """Read from a given set of signals.
 
@@ -351,6 +372,7 @@ class File:
         """
         output = []
         for rec in self.recordings:
-            if rec.contains_time(start_time) or rec.contains_time(end_time):
-                output.append(rec.read(start_time=start_time, end_time=end_time))
+            data = rec.read_signal(signal_name, start_time, end_time)
+            if data:
+                output.append(data)
         return output
