@@ -51,6 +51,7 @@ class Signal:
 
     @property
     def end_time(self):
+        """Return the time of the last point of data."""
         return self.start_time + self._handle['signal_data'].shape[0] / self.samplerate
 
     def _create(
@@ -134,8 +135,8 @@ class Signal:
 class Recording:
     """Representation of a recording.
 
-    A Recording object contains interfaces to the raw recorded data, as well as
-    all the processed transformations of the data.
+    A Recording object contains interfaces to the raw recorded data, as well as all the processed transformations of
+    the data.
 
     Attributes:
         start_time: The start time of the recording as a unix timestamp (in seconds).
@@ -183,6 +184,7 @@ class Recording:
 
     @property
     def end_time(self):
+        """Return the time of the last point of data in the raw timeseries."""
         return self.raw.end_time
 
     def _create(
@@ -236,13 +238,13 @@ class Recording:
             end_time: The last time requested
 
         Returns:
-            A tuple containing the data as a numpy array with shape (nsamples,
-            nchannels) and the start time as a unix timestamp (in seconds).
+            A tuple containing the data as a numpy array with shape (nsamples, nchannels) and the start time as a unix
+            timestamp (in seconds).
         """
         return self.raw.read(start_time=start_time, end_time=end_time)
 
     def contains_time(self, time: float) -> bool:
-        """Checks if time falls between start and end times"""
+        """Checks if time falls between start and end times."""
         return (time >= self.start_time) & (time <= self.end_time)
 
 
@@ -334,7 +336,17 @@ class File:
 
         return None
 
-    def read_signal(self, start_time=None, end_time=None):
+    def read_signal(self, start_time=None, end_time=None) -> List[Tuple[np.ndarray, float]]:
+        """Read from a given set of signals.
+
+        Args:
+            start_time: The starting time bound on the returned data.
+            end_time: The ending time bound on the returned data.
+
+        Returns:
+            A list of tuples containing the signal data, and the start_time for each recording which has data during
+            the selected time period.
+        """
         output = []
         for rec in self.recordings:
             if rec.contains_time(start_time) or rec.contains_time(end_time):
