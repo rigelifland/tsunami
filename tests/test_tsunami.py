@@ -46,10 +46,10 @@ def signal_handle(file_handle):
     return file_handle.create_group('signal_handle')
 
 
-def test_recording_read_write(recording_handle, test_recording):
+def test_signal_read_write(signal_handle, test_recording):
     """Test that the data written is the same as the data read."""
     data, meta = test_recording
-    sig = tsu.Recording(recording_handle, **meta)
+    sig = tsu.Signal(signal_handle, **meta)
     sig.append(data)
 
     returned_data, returned_start_time = sig.read(start_time=meta["start_time"])
@@ -59,10 +59,10 @@ def test_recording_read_write(recording_handle, test_recording):
     assert np.allclose(data, returned_data)
 
 
-def test_signal_read_write(signal_handle, test_recording):
+def test_recording_read_write(recording_handle, test_recording):
     """Test that the data written is the same as the data read."""
     data, meta = test_recording
-    sig = tsu.Signal(signal_handle, **meta)
+    sig = tsu.Recording(recording_handle, **meta)
     sig.append(data)
 
     returned_data, returned_start_time = sig.read(start_time=meta["start_time"])
