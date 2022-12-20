@@ -2,7 +2,7 @@
 import json
 import os
 import uuid
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import h5py
 import numpy as np
@@ -47,12 +47,12 @@ class File:
     def create_recording(
         self,
         samplerate: int,
+        name: str = '',
         start_time: float = 0,
         channels: int = 1,
         dtype: str = 'float',
-        name: str = '',
         chunk_size: int = 0,
-    ):
+    ) -> Recording:
         """Creates a new recording.
 
         Args:
@@ -63,19 +63,37 @@ class File:
             name: The name of the recording.
             chunk_size: The size of chunks
         """
+        if not name:
+            name = str(len(self.recordings))
+        if name in [rec.name for rec in self.recordings]:
+            raise ValueError("Non-unique name given. Please provide a unique name")
+
         chunk_size = chunk_size or samplerate * 60
         rec_handle = self._handle["recordings"].create_group(str(uuid.uuid4()))
-        self.recordings.append(
-            Recording(
-                rec_handle,
-                samplerate=samplerate,
-                start_time=start_time,
-                channels=channels,
-                dtype=dtype,
-                name=name,
-                chunk_size=chunk_size,
-            )
+        rec = Recording(
+            rec_handle,
+            samplerate=samplerate,
+            start_time=start_time,
+            channels=channels,
+            dtype=dtype,
+            name=name,
+            chunk_size=chunk_size,
         )
+        self.recordings.append(rec)
+        return rec
+
+    def get_recording(self, name: str) -> Union[None, Recording]:
+        """Get a recording by name.
+
+        Args:
+            name: The name to match. The value will match any substring of a recording's name.
+
+        Returns:
+            The first matched recording. If no recording name matches, it returns None
+        """
+        for rec in self.recordings:
+            if name in rec.name:
+                return rec
 
 
 class Recording:
@@ -139,6 +157,7 @@ class Recording:
     ):
         """Create structures in the file for recording data."""
         self.start_time = start_time
+        self.name = name
         self._handle.attrs['meta'] = json.dumps(dict(start_time=start_time))
 
         raw_handle = self._handle.create_group("raw")
@@ -148,7 +167,7 @@ class Recording:
             start_time=start_time,
             channels=channels,
             dtype=dtype,
-            name=name,
+            name='raw',
             chunk_size=chunk_size,
         )
         self._handle.create_group("signals")
