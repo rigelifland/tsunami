@@ -49,6 +49,10 @@ class Signal:
         else:
             self._load()
 
+    @property
+    def end_time(self):
+        return self.start_time + self._handle['signal_data'].shape[0] / self.samplerate
+
     def _create(
         self,
         samplerate: int,
@@ -177,6 +181,10 @@ class Recording:
         else:
             self._load()
 
+    @property
+    def end_time(self):
+        return self.raw.end_time
+
     def _create(
         self,
         samplerate: int,
@@ -232,6 +240,10 @@ class Recording:
             nchannels) and the start time as a unix timestamp (in seconds).
         """
         return self.raw.read(start_time=start_time, end_time=end_time)
+
+    def contains_time(self, time: float) -> bool:
+        """Checks if time falls between start and end times"""
+        return (time >= self.start_time) & (time <= self.end_time)
 
 
 class File:
@@ -321,3 +333,10 @@ class File:
                 return rec
 
         return None
+
+    def read_signal(self, start_time=None, end_time=None):
+        output = []
+        for rec in self.recordings:
+            if rec.contains_time(start_time) or rec.contains_time(end_time):
+                output.append(rec.read(start_time=start_time, end_time=end_time))
+        return output
