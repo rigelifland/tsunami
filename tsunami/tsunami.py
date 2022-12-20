@@ -2,7 +2,7 @@
 import json
 import os
 import uuid
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import h5py
 import numpy as np
@@ -17,59 +17,37 @@ class Signal:
 
     def __init__(
         self,
-        handle: h5py.Group,
+        name: str,
+        parent_handle: h5py.Group,
         samplerate: int,
         start_time: float = 0,
         channels: int = 1,
         dtype: str = 'float',
-        name: str = '',
-        chunk_size: int = 0,
+        chunk_size: Optional[int] = None,
     ):
         """Initialize the Signal object.
 
         Args:
-            handle: The h5 group in which to store the signal.
+            name: The name of the signal.
+            parent_handle: The h5 group in which to store the signal.
             samplerate: The sampleing frequency of the signal.
-            start_time: The start time of the recording as a unix timestamp (in seconds).
+            start_time: The start time of the recording as a unix timestamp.
             channels: The number of channels in the signal.
             dtype: The dtype of the data.
-            name: The name of the signal.
-            chunk_size: The size of chunks
+            chunk_size: The size of storage chunks. This will determine the steps at which the file expands.
         """
-        self._handle = handle
-        if 'signal_data' not in handle:
-            self._create(
-                samplerate=samplerate,
-                start_time=start_time,
-                channels=channels,
-                dtype=dtype,
-                name=name,
-                chunk_size=chunk_size,
-            )
-        else:
+        self._parent_handle = parent_handle
+        if name in parent_handle:
             self._load()
+            return
 
-    @property
-    def end_time(self):
-        """Return the time of the last point of data."""
-        return self.start_time + self._handle['signal_data'].shape[0] / self.samplerate
-
-    def _create(
-        self,
-        samplerate: int,
-        start_time: float = 0,
-        channels: int = 1,
-        dtype: str = 'float',
-        name: str = '',
-        chunk_size: int = 0,
-    ):
-        """Create the data structures in the file for the signal data."""
         self.samplerate = samplerate
         self.start_time = start_time
         self.channels = channels
         self.dtype = dtype
         self.name = name
         self.chunk_size = chunk_size or 60 * self.samplerate
+        self._handle = self._parent_handle.create_group(name)
 
         self._handle.attrs['meta'] = json.dumps(
             dict(
@@ -90,9 +68,18 @@ class Signal:
             chunks=(self.chunk_size, channels),
         )
 
+    @property
+    def end_time(self) -> float:
+        """Return the time of the last point of data."""
+        return self.start_time + self._handle['signal_data'].shape[0] / self.samplerate
+
     def _load(self):
         """Load the signal data from the group handle."""
         meta = json.loads(self._handle.attrs['meta'])
+        self._load_meta(meta)
+
+    def _load_meta(self, meta: dict):
+        """Load meta from a dict into the class attributes."""
         self.samplerate = meta['samplerate']
         self.start_time = meta['start_time']
         self.channels = meta['channels']
@@ -118,7 +105,7 @@ class Signal:
 
         Returns:
             A tuple containing the data as a numpy array with shape (nsamples,
-            nchannels) and the start time as a unix timestamp (in seconds).
+            nchannels) and the start time as a unix timestamp.
         """
         dset = self._handle['signal_data']
         start_time = start_time or self.start_time
@@ -139,87 +126,70 @@ class Recording:
     the data.
 
     Attributes:
-        start_time: The start time of the recording as a unix timestamp (in seconds).
+        start_time: The start time of the recording as a unix timestamp.
         raw: A Signal object containing the raw recorded data.
         signals: A list of Signal object containing transformations of the data.
     """
 
     def __init__(
         self,
-        handle: h5py.Group,
+        parent_handle: h5py.Group,
         samplerate: int,
         start_time: float = 0,
         channels: int = 1,
         dtype: str = 'float',
-        name: str = '',
+        name: Optional[str] = None,
         chunk_size: int = 0,
     ):
         """Initialize the Recording object.
 
         Args:
-            handle: The h5 group in which to store the recording.
+            parent_handle: The h5 group in which to store the recording.
             samplerate: The sampleing frequency of the recording.
-            start_time: The start time of the recording as a unix timestamp (in seconds).
+            start_time: The start time of the recording as a unix timestamp.
             channels: The number of channels in the recording.
             dtype: The dtype of the data.
             name: The name of the recording.
             chunk_size: The size of chunks
         """
-        self._handle = handle
-        self.start_time: float
-        self.raw: Signal
+        self._parent_handle = parent_handle
         self.signals: List[Signal] = []
+        self.name = name or f'Recording_{len(self.signals)}'
 
-        if "raw" not in handle:
-            self._create(
-                samplerate=samplerate,
-                start_time=start_time,
-                channels=channels,
-                dtype=dtype,
-                name=name,
-                chunk_size=chunk_size,
-            )
-        else:
+        if self.name in self._parent_handle:
             self._load()
+            return
 
-    @property
-    def end_time(self):
-        """Return the time of the last point of data in the raw timeseries."""
-        return self.raw.end_time
-
-    def _create(
-        self,
-        samplerate: int,
-        start_time: float = 0,
-        channels: int = 1,
-        dtype: str = 'float',
-        name: str = '',
-        chunk_size: int = 0,
-    ):
-        """Create structures in the file for recording data."""
         self.start_time = start_time
-        self.name = name
-        self._handle.attrs['meta'] = json.dumps(dict(start_time=start_time))
+        self._handle = self._parent_handle.create_group(name)
+        self._handle.attrs['meta'] = json.dumps(dict(start_time=self.start_time))
+        self._signals_handle = self._handle.create_group("signals")
 
-        raw_handle = self._handle.create_group("raw")
-        self.raw = Signal(
-            raw_handle,
+        raw = Signal(
+            name='raw',
+            parent_handle=self._signals_handle,
             samplerate=samplerate,
             start_time=start_time,
             channels=channels,
             dtype=dtype,
-            name='raw',
             chunk_size=chunk_size,
         )
-        self._handle.create_group("signals")
+        self.signals.append(raw)
+
+    @property
+    def end_time(self):
+        """Return the time of the last point of data in the raw timeseries."""
+        raw = [s for s in self.signals if s.name == "raw"][0]
+        return raw.end_time
 
     def _load(self):
         """Load the meta-data and raw data interface from the group handle."""
+        self._handle = self._parent_handle[self.name]
         meta = json.loads(self._handle.attrs['meta'])
         self.start_time = meta['start_time']
 
-        self.raw = Signal(self._handle["raw"])
-        for s in self._handle['signals']:
+        self._signals_handle = self._handle['signals']
+        for s in self._signals_handle:
             self.signals.append(self._handle['signals'][s])
 
     def append(self, data: np.ndarray):
@@ -228,7 +198,8 @@ class Recording:
         Args:
             data: A numpy array with shape (nsamples, nchannels).
         """
-        self.raw.append(data)
+        raw = [s for s in self.signals if s.name == "raw"][0]
+        raw.append(data)
 
     def read(self, start_time=None, end_time=None) -> Tuple[np.ndarray, float]:
         """Read data from the recording.
@@ -239,9 +210,10 @@ class Recording:
 
         Returns:
             A tuple containing the data as a numpy array with shape (nsamples, nchannels) and the start time as a unix
-            timestamp (in seconds).
+            timestamp.
         """
-        return self.raw.read(start_time=start_time, end_time=end_time)
+        raw = [s for s in self.signals if s.name == "raw"][0]
+        return raw.read(start_time=start_time, end_time=end_time)
 
     def contains_time(self, time: float) -> bool:
         """Checks if time falls between start and end times."""
@@ -296,7 +268,7 @@ class File:
 
         Args:
             samplerate: The sampleing frequency of the recording.
-            start_time: The start time of the recording as a unix timestamp (in seconds).
+            start_time: The start time of the recording as a unix timestamp.
             channels: The number of channels in the recording.
             dtype: The dtype of the data.
             name: The name of the recording.
