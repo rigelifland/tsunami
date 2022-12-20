@@ -243,6 +243,20 @@ class Recording:
         """Checks if time falls between start and end times."""
         return (time >= self.start_time) & (time <= self.end_time)
 
+    def get_signal(self, name: str) -> Union[Signal, None]:
+        """Get a signal by name.
+
+        Args:
+            name: the name of the desired signal.
+
+        Returns:
+            The signal with a matching name or None if not found.
+        """
+        for s in self.signals:
+            if s.name == name:
+                return s
+        return None
+
 
 class File:
     """Representation of a Tsunami File.
