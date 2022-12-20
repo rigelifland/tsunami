@@ -19,10 +19,10 @@ class Signal:
         self,
         name: str,
         parent_handle: h5py.Group,
-        samplerate: int,
-        start_time: float = 0,
+        samplerate: Optional[int] = None,
+        start_time: Union[float, int] = 0,
         channels: int = 1,
-        dtype: str = 'float',
+        dtype: Union[type, str] = 'float',
         chunk_size: Optional[int] = None,
     ):
         """Initialize the Signal object.
@@ -34,57 +34,64 @@ class Signal:
             start_time: The start time of the recording as a unix timestamp.
             channels: The number of channels in the signal.
             dtype: The dtype of the data.
-            chunk_size: The size of storage chunks. This will determine the steps at which the file expands.
+            chunk_size: The size of storage chunks. This will determine the steps in which the file expands.
         """
         self._parent_handle = parent_handle
         if name in parent_handle:
-            self._load()
-            return
-
-        self.samplerate = samplerate
-        self.start_time = start_time
-        self.channels = channels
-        self.dtype = dtype
-        self.name = name
-        self.chunk_size = chunk_size or 60 * self.samplerate
-        self._handle = self._parent_handle.create_group(name)
-
-        self._handle.attrs['meta'] = json.dumps(
-            dict(
-                samplerate=self.samplerate,
-                start_time=self.start_time,
-                channels=self.channels,
-                dtype=self.dtype,
-                chunk_size=self.chunk_size,
-                name=self.name,
+            # Load data from file
+            self._handle = self._parent_handle[name]
+            self._params = json.loads(self._handle.attrs['params'])
+        else:
+            # Use input parameters, write parameters to file
+            self._handle = self._parent_handle.create_group(name)
+            self._params = dict(
+                name=name,
+                samplerate=samplerate,
+                start_time=start_time,
+                channels=channels,
+                dtype=dtype,
             )
-        )
+            self._validate_params()
+            self._handle.attrs['params'] = json.dumps(self._params)
 
-        self._handle.create_dataset(
-            'signal_data',
-            shape=(0, channels),
-            maxshape=(None, channels),
-            dtype=dtype,
-            chunks=(self.chunk_size, channels),
-        )
+            chunk_size = chunk_size or 60 * self.samplerate
+            self._handle.create_dataset(
+                'signal_data',
+                shape=(0, self.channels),
+                maxshape=(None, self.channels),
+                dtype=self.dtype,
+                chunks=(chunk_size, self.channels),
+            )
 
     @property
-    def end_time(self) -> float:
+    def name(self) -> str:
+        """Get the name."""
+        return self._params['name']
+
+    @property
+    def samplerate(self) -> int:
+        """Get the samplerate."""
+        return self._params['samplerate']
+
+    @property
+    def start_time(self) -> Union[float, int]:
+        """Get the start time."""
+        return self._params['start_time']
+
+    @property
+    def end_time(self) -> Union[float, int]:
         """Return the time of the last point of data."""
         return self.start_time + self._handle['signal_data'].shape[0] / self.samplerate
 
-    def _load(self):
-        """Load the signal data from the group handle."""
-        meta = json.loads(self._handle.attrs['meta'])
-        self._load_meta(meta)
+    @property
+    def channels(self) -> int:
+        """Get the number of channels."""
+        return self._params['channels']
 
-    def _load_meta(self, meta: dict):
-        """Load meta from a dict into the class attributes."""
-        self.samplerate = meta['samplerate']
-        self.start_time = meta['start_time']
-        self.channels = meta['channels']
-        self.dtype = meta['dtype']
-        self.name = meta['name']
+    @property
+    def dtype(self) -> Union[type, str]:
+        """Get the dtype."""
+        return self._params['dtype']
 
     def append(self, data):
         """Append data to the end of the signal data.
@@ -118,6 +125,19 @@ class Signal:
         data = dset[start_idx:end_idx]
         return data, actual_start_time
 
+    def _validate_params(self):
+        assert isinstance(self.name, str), "'name' must be a string."
+
+        assert isinstance(self.samplerate, int), "'samplerate' must be an integer."
+        assert self.samplerate > 0, "'samplerate' must be greater than zero."
+
+        assert isinstance(self.start_time, (int, float)), "'start_time' must be numeric"
+
+        assert isinstance(self.channels, int), "'channels' must be an integer."
+        assert self.channels > 0, "'channels' must be greater than zero."
+
+        assert isinstance(self.dtype, type) or isinstance(self.dtype, str), "'dtype' must be a type or a str"
+
 
 class Recording:
     """Representation of a recording.
@@ -134,14 +154,17 @@ class Recording:
     def __init__(
         self,
         parent_handle: h5py.Group,
-        samplerate: int,
-        start_time: float = 0,
-        channels: int = 1,
-        dtype: str = 'float',
         name: Optional[str] = None,
-        chunk_size: int = 0,
+        samplerate: Optional[int] = None,
+        start_time: Union[float, int] = 0,
+        channels: int = 1,
+        dtype: Union[type, str] = 'float',
+        chunk_size: Optional[int] = None,
     ):
         """Initialize the Recording object.
+
+        If a recording with the given name is found it will load that recording into the object.
+        If no matching name is found it will use the input arguments to create the 'raw' Signal.
 
         Args:
             parent_handle: The h5 group in which to store the recording.
@@ -157,40 +180,39 @@ class Recording:
         self.name = name or f'Recording_{len(self.signals)}'
 
         if self.name in self._parent_handle:
-            self._load()
-            return
+            self._handle = self._parent_handle[self.name]
+            self._params = json.loads(self._handle.attrs['params'])
 
-        self.start_time = start_time
-        self._handle = self._parent_handle.create_group(name)
-        self._handle.attrs['meta'] = json.dumps(dict(start_time=self.start_time))
-        self._signals_handle = self._handle.create_group("signals")
+            self._signals_handle = self._handle['signals']
+            for s in self._signals_handle:
+                self.signals.append(Signal(s, self._signals_handle))
+        else:
+            self._params = dict(name=name, start_time=start_time)
+            self._handle = self._parent_handle.create_group(name)
+            self._handle.attrs['params'] = json.dumps(self._params)
 
-        raw = Signal(
-            name='raw',
-            parent_handle=self._signals_handle,
-            samplerate=samplerate,
-            start_time=start_time,
-            channels=channels,
-            dtype=dtype,
-            chunk_size=chunk_size,
-        )
-        self.signals.append(raw)
+            self._signals_handle = self._handle.create_group("signals")
+            raw = Signal(
+                name='raw',
+                parent_handle=self._signals_handle,
+                samplerate=samplerate,
+                start_time=start_time,
+                channels=channels,
+                dtype=dtype,
+                chunk_size=chunk_size,
+            )
+            self.signals.append(raw)
+
+    @property
+    def start_time(self) -> Union[float, int]:
+        """Get the start time."""
+        return self._params['start_time']
 
     @property
     def end_time(self):
-        """Return the time of the last point of data in the raw timeseries."""
+        """Get the end time."""
         raw = [s for s in self.signals if s.name == "raw"][0]
         return raw.end_time
-
-    def _load(self):
-        """Load the meta-data and raw data interface from the group handle."""
-        self._handle = self._parent_handle[self.name]
-        meta = json.loads(self._handle.attrs['meta'])
-        self.start_time = meta['start_time']
-
-        self._signals_handle = self._handle['signals']
-        for s in self._signals_handle:
-            self.signals.append(self._handle['signals'][s])
 
     def append(self, data: np.ndarray):
         """Append data to the end of the raw-data signal.
@@ -201,7 +223,9 @@ class Recording:
         raw = [s for s in self.signals if s.name == "raw"][0]
         raw.append(data)
 
-    def read(self, start_time=None, end_time=None) -> Tuple[np.ndarray, float]:
+    def read(
+        self, start_time: Union[float, int] = None, end_time: Union[float, int] = None
+    ) -> Tuple[np.ndarray, Union[float, int]]:
         """Read data from the recording.
 
         Args:
@@ -215,7 +239,7 @@ class Recording:
         raw = [s for s in self.signals if s.name == "raw"][0]
         return raw.read(start_time=start_time, end_time=end_time)
 
-    def contains_time(self, time: float) -> bool:
+    def contains_time(self, time: Union[float, int]) -> bool:
         """Checks if time falls between start and end times."""
         return (time >= self.start_time) & (time <= self.end_time)
 
@@ -242,27 +266,19 @@ class File:
         self.recordings: List[Recording] = []
 
         if self.mode == 'w':
-            self._create()
+            self._handle.create_group("recordings")
         else:
-            self._load()
-
-    def _create(self):
-        """Initialize the file."""
-        self._handle.create_group("recordings")
-
-    def _load(self):
-        """Load all the recording objects from the file-handle."""
-        for r in self._handle['recordings']:
-            self.recordings.append(Recording(self._handle['recordings'][r]))
+            for r in self._handle['recordings']:
+                self.recordings.append(Recording(self._handle['recordings'][r]))
 
     def create_recording(
         self,
         samplerate: int,
-        name: str = '',
-        start_time: float = 0,
+        name: Optional[str] = None,
+        start_time: Union[float, int] = 0,
         channels: int = 1,
-        dtype: str = 'float',
-        chunk_size: int = 0,
+        dtype: Union[type, str] = 'float',
+        chunk_size: Optional[int] = None,
     ) -> Recording:
         """Creates a new recording.
 
@@ -274,10 +290,8 @@ class File:
             name: The name of the recording.
             chunk_size: The size of chunks
         """
-        if not name:
-            name = str(len(self.recordings))
         if name in [rec.name for rec in self.recordings]:
-            raise ValueError("Non-unique name given. Please provide a unique name")
+            raise ValueError("Recording exists already!")
 
         chunk_size = chunk_size or samplerate * 60
         rec_handle = self._handle["recordings"].create_group(str(uuid.uuid4()))
@@ -308,7 +322,9 @@ class File:
 
         return None
 
-    def read_signal(self, start_time=None, end_time=None) -> List[Tuple[np.ndarray, float]]:
+    def read_signal(
+        self, start_time: Union[float, int], end_time: Union[float, int]
+    ) -> List[Tuple[np.ndarray, Union[float, int]]]:
         """Read from a given set of signals.
 
         Args:
