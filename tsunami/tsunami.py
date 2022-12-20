@@ -104,12 +104,12 @@ class Signal:
         dset.resize(dset.shape[0] + data.shape[0], axis=0)
         dset[-data.shape[0] :] = data.reshape(-1, self.channels)
 
-    def read(self, start_time=None, stop_time=None) -> Tuple[np.ndarray, float]:
+    def read(self, start_time=None, end_time=None) -> Tuple[np.ndarray, float]:
         """Read data from the signal.
 
         Args:
             start_time: The first time requested
-            stop_time: The last time requested
+            end_time: The last time requested
 
         Returns:
             A tuple containing the data as a numpy array with shape (nsamples,
@@ -117,13 +117,13 @@ class Signal:
         """
         dset = self._handle['signal_data']
         start_time = start_time or self.start_time
-        stop_time = stop_time or self.start_time + dset.shape[0] / self.samplerate
+        end_time = end_time or self.start_time + dset.shape[0] / self.samplerate
         samplerate = self.samplerate
         start_idx = int(max(0, (start_time - self.start_time) * samplerate))
-        stop_idx = int(min(dset.shape[0], (stop_time - self.start_time) * samplerate))
+        end_idx = int(min(dset.shape[0], (end_time - self.start_time) * samplerate))
 
         actual_start_time = self.start_time + start_idx * self.samplerate
-        data = dset[start_idx:stop_idx]
+        data = dset[start_idx:end_idx]
         return data, actual_start_time
 
 
@@ -220,18 +220,18 @@ class Recording:
         """
         self.raw.append(data)
 
-    def read(self, start_time=None, stop_time=None) -> Tuple[np.ndarray, float]:
+    def read(self, start_time=None, end_time=None) -> Tuple[np.ndarray, float]:
         """Read data from the recording.
 
         Args:
             start_time: The first time requested
-            stop_time: The last time requested
+            end_time: The last time requested
 
         Returns:
             A tuple containing the data as a numpy array with shape (nsamples,
             nchannels) and the start time as a unix timestamp (in seconds).
         """
-        return self.raw.read(start_time=start_time, stop_time=stop_time)
+        return self.raw.read(start_time=start_time, end_time=end_time)
 
 
 class File:
