@@ -102,7 +102,7 @@ class Signal:
         dset.resize(dset.shape[0] + data.shape[0], axis=0)
         dset[-data.shape[0] :] = data.reshape(-1, self.channels)
 
-    def read(self, start_time=None, end_time=None) -> Tuple[np.ndarray, float]:
+    def read(self, start_time=None, end_time=None) -> Tuple[dict, np.ndarray]:
         """Read data from the signal.
 
         Args:
@@ -110,8 +110,7 @@ class Signal:
             end_time: The last time requested
 
         Returns:
-            A tuple containing the data as a numpy array with shape (nsamples,
-            nchannels) and the start time as a unix timestamp.
+            A tuple containing the signal info and data as a numpy array with shape (nsamples, nchannels).
         """
         dset = self._handle['signal_data']
         start_time = start_time or self.start_time
@@ -121,8 +120,10 @@ class Signal:
         end_idx = int(min(dset.shape[0], (end_time - self.start_time) * samplerate))
 
         actual_start_time = self.start_time + start_idx * self.samplerate
+        actual_end_time = self.start_time + end_idx * self.samplerate
         data = dset[start_idx:end_idx]
-        return data, actual_start_time
+        info = dict(start_time=actual_start_time, end_time=actual_end_time, signal_name=self.name)
+        return info, data
 
     def _validate_params(self):
         assert isinstance(self.name, str), "'name' must be a string."
@@ -227,9 +228,7 @@ class Recording:
         raw = [s for s in self.signals if s.name == "raw"][0]
         raw.append(data)
 
-    def read(
-        self, start_time: Union[float, int] = None, end_time: Union[float, int] = None
-    ) -> Tuple[np.ndarray, Union[float, int]]:
+    def read(self, start_time: Union[float, int] = None, end_time: Union[float, int] = None) -> Tuple[dict, np.ndarray]:
         """Read data from the recording.
 
         Args:
@@ -237,8 +236,7 @@ class Recording:
             end_time: The last time requested
 
         Returns:
-            A tuple containing the data as a numpy array with shape (nsamples, nchannels) and the start time as a unix
-            timestamp.
+            A tuple containing the signal info and data as a numpy array with shape (nsamples, nchannels)
         """
         raw = [s for s in self.signals if s.name == "raw"][0]
         return raw.read(start_time=start_time, end_time=end_time)
@@ -263,7 +261,7 @@ class Recording:
 
     def read_signal(
         self, signal_name: str, start_time: Union[float, int], end_time: Union[float, int]
-    ) -> Union[Tuple[np.ndarray, Union[float, int]], None]:
+    ) -> Union[Tuple[dict, np.ndarray], None]:
         """Read from a given signal.
 
         Args:
@@ -271,12 +269,14 @@ class Recording:
             end_time: The ending time bound on the returned data.
 
         Returns:
-            A tuple containing the signal data, and the start_time. Returns None if no matching signal is found.
+            A tuple containing the signal info and data. Returns None if no matching signal is found.
         """
         if self.contains_time(start_time) or self.contains_time(end_time):
             sig = self.get_signal(signal_name)
             if sig:
-                return sig.read(start_time, end_time)
+                info, data = sig.read(start_time, end_time)
+                info['recording_name'] = self.name
+                return info, data
         return None
 
 
@@ -359,7 +359,7 @@ class File:
 
     def read_signal(
         self, signal_name: str, start_time: Union[float, int], end_time: Union[float, int]
-    ) -> List[Tuple[np.ndarray, Union[float, int]]]:
+    ) -> List[Tuple[dict, np.ndarray]]:
         """Read from a given set of signals.
 
         Args:
