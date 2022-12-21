@@ -126,17 +126,19 @@ class Signal:
         return info, data
 
     def _validate_params(self):
-        assert isinstance(self.name, str), "'name' must be a string."
+        assert isinstance(self.name, str), f"'name' must be a string: {self.name}"
 
-        assert isinstance(self.samplerate, int), "'samplerate' must be an integer."
-        assert self.samplerate > 0, "'samplerate' must be greater than zero."
+        assert isinstance(self.samplerate, int), f"'samplerate' must be an integer: {self.samplerate}"
+        assert self.samplerate > 0, f"'samplerate' must be greater than zero: {self.samplerate}"
 
-        assert isinstance(self.start_time, (int, float)), "'start_time' must be numeric"
+        assert isinstance(self.start_time, (int, float)), f"'start_time' must be numeric: {self.start_time}"
 
-        assert isinstance(self.channels, int), "'channels' must be an integer."
-        assert self.channels > 0, "'channels' must be greater than zero."
+        assert isinstance(self.channels, int), f"'channels' must be an integer.: {self.channels}"
+        assert self.channels > 0, f"'channels' must be greater than zero: {self.channels}"
 
-        assert isinstance(self.dtype, type) or isinstance(self.dtype, str), "'dtype' must be a type or a str"
+        assert isinstance(self.dtype, type) or isinstance(
+            self.dtype, str
+        ), f"'dtype' must be a type or a str: {self.dtype}"
 
 
 class Recording:
@@ -185,7 +187,7 @@ class Recording:
 
             self._signals_handle = self._handle['signals']
             for s in self._signals_handle:
-                self.signals.append(Signal(s, self._signals_handle))
+                self.signals.append(Signal(parent_handle=self._signals_handle, name=s))
         else:
             self._params = dict(name=name, start_time=start_time)
             self._handle = self._parent_handle.create_group(name)
@@ -260,11 +262,12 @@ class Recording:
         return None
 
     def read_signal(
-        self, signal_name: str, start_time: Union[float, int], end_time: Union[float, int]
+        self, name: str, start_time: Union[float, int], end_time: Union[float, int]
     ) -> Union[Tuple[dict, np.ndarray], None]:
         """Read from a given signal.
 
         Args:
+            name: The name of the signal
             start_time: The starting time bound on the returned data.
             end_time: The ending time bound on the returned data.
 
@@ -272,7 +275,7 @@ class Recording:
             A tuple containing the signal info and data. Returns None if no matching signal is found.
         """
         if self.contains_time(start_time) or self.contains_time(end_time):
-            sig = self.get_signal(signal_name)
+            sig = self.get_signal(name)
             if sig:
                 info, data = sig.read(start_time, end_time)
                 info['recording_name'] = self.name
@@ -304,8 +307,9 @@ class File:
         if self.mode == 'w':
             self._recordings_handle = self._handle.create_group("recordings")
         else:
-            for r in self._handle['recordings']:
-                self.recordings.append(Recording(self._handle['recordings'][r]))
+            self._recordings_handle = self._handle['recordings']
+            for r in self._recordings_handle:
+                self.recordings.append(Recording(parent_handle=self._recordings_handle, name=r))
 
     def create_recording(
         self,
@@ -358,11 +362,12 @@ class File:
         return None
 
     def read_signal(
-        self, signal_name: str, start_time: Union[float, int], end_time: Union[float, int]
+        self, name: str, start_time: Union[float, int], end_time: Union[float, int]
     ) -> List[Tuple[dict, np.ndarray]]:
         """Read from a given set of signals.
 
         Args:
+            name: The name of the signal.
             start_time: The starting time bound on the returned data.
             end_time: The ending time bound on the returned data.
 
@@ -372,7 +377,7 @@ class File:
         """
         output = []
         for rec in self.recordings:
-            data = rec.read_signal(signal_name, start_time, end_time)
+            data = rec.read_signal(name, start_time, end_time)
             if data:
                 output.append(data)
         return output
