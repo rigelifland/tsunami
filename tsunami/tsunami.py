@@ -16,8 +16,8 @@ class Signal:
 
     def __init__(
         self,
-        name: str,
         parent_handle: h5py.Group,
+        name: str,
         samplerate: Optional[int] = None,
         start_time: Union[float, int] = 0,
         channels: int = 1,
@@ -27,8 +27,8 @@ class Signal:
         """Initialize the Signal object.
 
         Args:
-            name: The name of the signal.
             parent_handle: The h5 group in which to store the signal.
+            name: The name of the signal.
             samplerate: The sampleing frequency of the signal.
             start_time: The start time of the recording as a unix timestamp.
             channels: The number of channels in the signal.
@@ -193,8 +193,8 @@ class Recording:
 
             self._signals_handle = self._handle.create_group("signals")
             raw = Signal(
-                name='raw',
                 parent_handle=self._signals_handle,
+                name='raw',
                 samplerate=samplerate,
                 start_time=start_time,
                 channels=channels,
@@ -332,11 +332,11 @@ class File:
         chunk_size = chunk_size or samplerate * 60
         rec = Recording(
             self._recordings_handle,
+            name=name,
             samplerate=samplerate,
             start_time=start_time,
             channels=channels,
             dtype=dtype,
-            name=name,
             chunk_size=chunk_size,
         )
         self.recordings.append(rec)
