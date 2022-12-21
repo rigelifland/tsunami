@@ -124,6 +124,18 @@ def test_get_recording_returns_none(read_file):
     assert rec is None
 
 
+def test_read_signal_returns_empty_when_out_of_range(read_file):
+    """Test that read_signal returns an empty list when the signal doesn't have data in the requested range."""
+    output = read_file.read_signal(name="processed", start_time=read_file.end_time + 1, end_time=read_file.end_time + 2)
+    assert len(output) == 0
+
+
+def test_read_signal_returns_empty_on_missing_signal(read_file):
+    """Test that read_signal returns an empty list when the signal doesn't exit."""
+    output = read_file.read_signal(name="not_there", start_time=read_file.start_time, end_time=read_file.end_time)
+    assert len(output) == 0
+
+
 def test_error_on_recording_exists_already(read_file):
     """Test that a ValueError is raised when trying to create recording with name that already exists."""
     with pytest.raises(ValueError):

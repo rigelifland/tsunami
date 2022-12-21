@@ -311,6 +311,16 @@ class File:
             for r in self._recordings_handle:
                 self.recordings.append(Recording(parent_handle=self._recordings_handle, name=r))
 
+    @property
+    def start_time(self):
+        """Get the start time."""
+        return min([r.start_time for r in self.recordings])
+
+    @property
+    def end_time(self):
+        """Get the end time."""
+        return max([r.end_time for r in self.recordings])
+
     def create_recording(
         self,
         samplerate: int,
