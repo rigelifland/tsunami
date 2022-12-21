@@ -4,8 +4,10 @@
 import h5py
 import numpy as np
 import pytest
+from click.testing import CliRunner
 
 import tsunami as tsu
+from tsunami import cli
 
 
 @pytest.fixture(scope="session")
@@ -67,6 +69,17 @@ def read_file(test_file_path, recording_data):
     psig.append(data * 2)
 
     return tsu.File(test_file_path, 'r')
+
+
+def test_command_line_interface():
+    """Test the CLI."""
+    runner = CliRunner()
+    result = runner.invoke(cli.main)
+    assert result.exit_code == 0
+    assert 'tsunami' in result.output
+    help_result = runner.invoke(cli.main, ['--help'])
+    assert help_result.exit_code == 0
+    assert '--help  Show this message and exit.' in help_result.output
 
 
 def test_signal_read_write(signals_handle, recording_data):
