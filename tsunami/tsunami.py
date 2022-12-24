@@ -8,6 +8,72 @@ import numpy as np
 from typing_extensions import Literal
 
 
+class Scale:
+    """Representation of a specific scaling of a timeseries signal."""
+
+    def __init__(self, name: str, parent_handle: h5py.Group, upstream_name: str = '', relative_scale_factor: int = 4):
+        """Initialize the scale."""
+        self._parent_handle = parent_handle
+        if name in self._parent_handle:
+            self._handle = self._parent_handle[name]
+            self._params = json.loads(self._handle.attrs['params'])
+            self._upstream_handle = self._parent_handle[self.upstream_name]
+        else:
+            self._upstream_handle = self._parent_handle[upstream_name]
+            self._handle = self._parent_handle.create_dataset(
+                name,
+                shape=(0, self._upstream_handle.shape[1]),
+                maxshape=(None, self._upstream_handle.shape[1]),
+                dtype=self._upstream_handle.dtype,
+                chunks=self._upstream_handle.chunks,
+            )
+            upstream_scale_factor = json.loads(self._upstream_handle.attrs['params'])['scale_factor']
+            self._params = dict(
+                name=name,
+                upstream_name=upstream_name,
+                scale_factor=upstream_scale_factor * relative_scale_factor,
+                relative_scale_factor=relative_scale_factor,
+            )
+            self._handle.attrs['params'] = json.dumps(self._params)
+
+    @property
+    def name(self) -> str:
+        """Get the name."""
+        return self._params['name']
+
+    @property
+    def upstream_name(self) -> str:
+        """Get the upstream_name."""
+        return self._params['upstream_name']
+
+    @property
+    def relative_scale_factor(self) -> str:
+        """Get the relative_scale_factor."""
+        return self._params['relative_scale_factor']
+
+    @property
+    def scale_factor(self) -> str:
+        """Get the scale_factor."""
+        return self._params['scale_factor']
+
+    def update(self):
+        """Update the scale with data from the upstream scale."""
+        if ((self._handle.shape[0] + 1) * self.relative_scale_factor) < self._upstream_handle.shape[0]:
+            up_start_idx = self._handle.shape[0] * self.relative_scale_factor
+            up_end_idx = int(self._upstream_handle.shape[0] / self.relative_scale_factor) * self.relative_scale_factor
+            data = self.decimate(self._upstream_handle[up_start_idx:up_end_idx])
+            self._handle.resize(self._handle.shape[0] + data.shape[0], axis=0)
+            self._handle[-data.shape[0] :] = data
+
+    def decimate(self, data: np.ndarray) -> np.ndarray:
+        """Return the max (absolute) value for every <relative_scale_factor> points."""
+
+        def dec_func_1d(x):
+            return np.abs(x.reshape(-1, self.relative_scale_factor)).max(axis=1)
+
+        return np.apply_along_axis(dec_func_1d, 0, data)
+
+
 class Signal:
     """Representation of a timeseries signal.
 
@@ -36,10 +102,16 @@ class Signal:
             chunk_size: The size of storage chunks. This will determine the steps in which the file expands.
         """
         self._parent_handle = parent_handle
+        self.scales: List[Scale] = []
+        self.base_name = "signal_data"
+        self.relative_scale_factor = 4
         if name in parent_handle:
             # Load data from file
             self._handle = self._parent_handle[name]
             self._params = json.loads(self._handle.attrs['params'])
+            for s in self._handle:
+                if s != self.base_name:
+                    self.scales.append(Scale(name=s, parent_handle=self._handle))
         else:
             # Use input parameters, write parameters to file
             self._handle = self._parent_handle.create_group(name)
@@ -54,12 +126,28 @@ class Signal:
             self._handle.attrs['params'] = json.dumps(self._params)
 
             chunk_size = chunk_size or 60 * self.samplerate
-            self._handle.create_dataset(
-                'signal_data',
+            dset = self._handle.create_dataset(
+                self.base_name,
                 shape=(0, self.channels),
                 maxshape=(None, self.channels),
                 dtype=self.dtype,
                 chunks=(chunk_size, self.channels),
+            )
+            dset.attrs['params'] = json.dumps(
+                dict(
+                    name=self.base_name,
+                    scale_factor=1,
+                    relative_scale_factor=1,
+                    upstream_name='',
+                )
+            )
+            self.scales.append(
+                Scale(
+                    name=f'{self.base_name}_{self.relative_scale_factor}',
+                    parent_handle=self._handle,
+                    upstream_name=self.base_name,
+                    relative_scale_factor=self.relative_scale_factor,
+                )
             )
 
     @property
@@ -80,7 +168,7 @@ class Signal:
     @property
     def end_time(self) -> Union[float, int]:
         """Return the time of the last point of data."""
-        return self.start_time + self._handle['signal_data'].shape[0] / self.samplerate
+        return self.start_time + self._handle[self.base_name].shape[0] / self.samplerate
 
     @property
     def channels(self) -> int:
@@ -98,9 +186,22 @@ class Signal:
         Args:
             data: A numpy array with shape (nsamples, nchannels).
         """
-        dset = self._handle['signal_data']
+        dset = self._handle[self.base_name]
         dset.resize(dset.shape[0] + data.shape[0], axis=0)
         dset[-data.shape[0] :] = data.reshape(-1, self.channels)
+
+        max_scale = sorted(self.scales, key=lambda x: x.scale_factor)[-1]
+        while dset.shape[0] > max_scale.scale_factor * 2:
+            max_scale = Scale(
+                name=f'{self.base_name}_{max_scale.scale_factor*self.relative_scale_factor}',
+                parent_handle=self._handle,
+                upstream_name=max_scale.name,
+                relative_scale_factor=self.relative_scale_factor,
+            )
+            self.scales.append(max_scale)
+
+        for s in self.scales:
+            s.update()
 
     def read(self, start_time=None, end_time=None) -> Tuple[dict, np.ndarray]:
         """Read data from the signal.
@@ -112,7 +213,7 @@ class Signal:
         Returns:
             A tuple containing the signal info and data as a numpy array with shape (nsamples, nchannels).
         """
-        dset = self._handle['signal_data']
+        dset = self._handle[self.base_name]
         start_time = start_time or self.start_time
         end_time = end_time or self.start_time + dset.shape[0] / self.samplerate
         samplerate = self.samplerate
