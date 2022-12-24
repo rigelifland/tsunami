@@ -64,6 +64,7 @@ def read_file(test_file_path, recording_data):
     rec2 = tf.create_recording(name="Recording_2", **params)
     rec2.append(data)
     rec2.append(data)
+    rec2.append(data[:100])
 
     psig = tsu.Signal(parent_handle=rec2._signals_handle, name='processed', **params)
     psig.append(data * 2)
