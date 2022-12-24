@@ -217,12 +217,13 @@ class Signal:
             A tuple containing the signal info and data as a numpy array with shape (nsamples, nchannels).
         """
         if npoints:
+            sorted_scales = sorted(self.scales, key=lambda x: x.scale_factor, reverse=True)
             requested_scale_factor = (end_time - start_time) * self.samplerate / npoints
-            if requested_scale_factor < 1:
+            if requested_scale_factor < sorted_scales[-1].scale_factor:
                 dset = self._handle[self.base_name]
                 scale_factor = 1
             else:
-                for s in sorted(self.scales, key=lambda x: x.scale_factor, reverse=True):  # pragma: no branch
+                for s in sorted_scales:  # pragma: no branch
                     if s.scale_factor < requested_scale_factor:
                         break
                 dset = s._handle
