@@ -90,7 +90,7 @@ def test_signal_read_write(signals_handle, recording_data):
     sig_write.append(data)
 
     sig_read = tsu.Signal(signals_handle, 'test_signal')
-    read_info, read_data = sig_read.read(start_time=params["start_time"])
+    read_info, read_data = sig_read.read(start_time=params["start_time"], end_time=params["start_time"] + 1)
     assert (
         abs(read_info['start_time'] - params["start_time"]) < 1 / params["samplerate"]
     ), "Returned start time is different than requested"
@@ -104,7 +104,9 @@ def test_recording_read_write(recording_handle, recording_data):
     rec_write.append(data)
 
     rec_read = tsu.Recording(parent_handle=recording_handle, name='test_recording')
-    read_info, read_data = rec_read.read(start_time=params["start_time"])
+    read_info, read_data = rec_read.read_signal(
+        name='raw', start_time=params["start_time"], end_time=params["start_time"] + 1
+    )
     assert (
         abs(read_info['start_time'] - params["start_time"]) < 1 / params["samplerate"]
     ), "Returned start time is different than requested"
@@ -124,6 +126,30 @@ def test_file_read_write(recording_data, test_file_path):
     read_info, read_data = dataset[0]
     assert read_info['start_time'] == params['start_time']
     assert np.allclose(data, read_data)
+
+
+def test_file_read_scaled(recording_data, read_file):
+    """Test that scaled returns have the correct start time, number of points."""
+    npoints = 100
+    params, data = recording_data
+    dataset = read_file.read_signal(
+        name='raw', start_time=params['start_time'], end_time=params['start_time'] + 1, npoints=npoints
+    )
+    read_info, read_data = dataset[0]
+    assert read_info['start_time'] == params['start_time']
+    assert read_data.shape[0] > npoints & read_data.shape[0] <= npoints
+
+
+def test_file_read_max_scaled(recording_data, read_file):
+    """Test that requests for more points than base scale return base scale."""
+    params, data = recording_data
+    npoints = params['samplerate'] * 2
+    dataset = read_file.read_signal(
+        name='raw', start_time=params['start_time'], end_time=params['start_time'] + 1, npoints=npoints
+    )
+    read_info, read_data = dataset[0]
+    assert read_info['start_time'] == params['start_time']
+    assert read_data.shape[0] == params['samplerate']
 
 
 def test_get_signal_returns_none(read_file):
