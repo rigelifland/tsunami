@@ -47,12 +47,12 @@ class Scale:
         return self._params['upstream_name']
 
     @property
-    def relative_scale_factor(self) -> str:
+    def relative_scale_factor(self) -> int:
         """Get the relative_scale_factor."""
         return self._params['relative_scale_factor']
 
     @property
-    def scale_factor(self) -> str:
+    def scale_factor(self) -> int:
         """Get the scale_factor."""
         return self._params['scale_factor']
 
@@ -203,22 +203,36 @@ class Signal:
         for s in self.scales:
             s.update()
 
-    def read(self, start_time=None, end_time=None) -> Tuple[dict, np.ndarray]:
+    def read(
+        self, start_time: Union[int, float], end_time: Union[int, float], npoints: Optional[int] = None
+    ) -> Tuple[dict, np.ndarray]:
         """Read data from the signal.
 
         Args:
             start_time: The first time requested
             end_time: The last time requested
+            npoints: The number of points desired. Returns all available points if None.
 
         Returns:
             A tuple containing the signal info and data as a numpy array with shape (nsamples, nchannels).
         """
-        dset = self._handle[self.base_name]
-        start_time = start_time or self.start_time
-        end_time = end_time or self.start_time + dset.shape[0] / self.samplerate
-        samplerate = self.samplerate
-        start_idx = int(max(0, (start_time - self.start_time) * samplerate))
-        end_idx = int(min(dset.shape[0], (end_time - self.start_time) * samplerate))
+        if npoints:
+            requested_scale_factor = (end_time - start_time) * self.samplerate / npoints
+            if requested_scale_factor < 1:
+                dset = self._handle[self.base_name]
+                scale_factor = 1
+            else:
+                for s in sorted(self.scales, key=lambda x: x.scale_factor, reverse=True):
+                    if s.scale_factor < requested_scale_factor:
+                        break
+                dset = s._handle
+                scale_factor = s.scale_factor
+        else:
+            dset = self._handle[self.base_name]
+            scale_factor = 1
+
+        start_idx = int(max(0, (start_time - self.start_time) * self.samplerate / scale_factor))
+        end_idx = int(min(dset.shape[0], (end_time - self.start_time) * self.samplerate / scale_factor))
 
         actual_start_time = self.start_time + start_idx * self.samplerate
         actual_end_time = self.start_time + end_idx * self.samplerate
@@ -331,19 +345,6 @@ class Recording:
         raw = [s for s in self.signals if s.name == "raw"][0]
         raw.append(data)
 
-    def read(self, start_time: Union[float, int] = None, end_time: Union[float, int] = None) -> Tuple[dict, np.ndarray]:
-        """Read data from the recording.
-
-        Args:
-            start_time: The first time requested
-            end_time: The last time requested
-
-        Returns:
-            A tuple containing the signal info and data as a numpy array with shape (nsamples, nchannels)
-        """
-        raw = [s for s in self.signals if s.name == "raw"][0]
-        return raw.read(start_time=start_time, end_time=end_time)
-
     def contains_time(self, time: Union[float, int]) -> bool:
         """Checks if time falls between start and end times."""
         return (time >= self.start_time) & (time <= self.end_time)
@@ -363,7 +364,7 @@ class Recording:
         return None
 
     def read_signal(
-        self, name: str, start_time: Union[float, int], end_time: Union[float, int]
+        self, name: str, start_time: Union[float, int], end_time: Union[float, int], npoints: Optional[int] = None
     ) -> Union[Tuple[dict, np.ndarray], None]:
         """Read from a given signal.
 
@@ -371,6 +372,7 @@ class Recording:
             name: The name of the signal
             start_time: The starting time bound on the returned data.
             end_time: The ending time bound on the returned data.
+            npoints: The number of points desired. Returns all available points if None.
 
         Returns:
             A tuple containing the signal info and data. Returns None if no matching signal is found.
@@ -378,7 +380,7 @@ class Recording:
         if self.contains_time(start_time) or self.contains_time(end_time):
             sig = self.get_signal(name)
             if sig:
-                info, data = sig.read(start_time, end_time)
+                info, data = sig.read(start_time=start_time, end_time=end_time, npoints=npoints)
                 info['recording_name'] = self.name
                 return info, data
         return None
@@ -473,7 +475,7 @@ class File:
         return None
 
     def read_signal(
-        self, name: str, start_time: Union[float, int], end_time: Union[float, int]
+        self, name: str, start_time: Union[float, int], end_time: Union[float, int], npoints: Optional[int] = None
     ) -> List[Tuple[dict, np.ndarray]]:
         """Read from a given set of signals.
 
@@ -481,6 +483,7 @@ class File:
             name: The name of the signal.
             start_time: The starting time bound on the returned data.
             end_time: The ending time bound on the returned data.
+            npoints: The number of points desired. Returns all available points if None.
 
         Returns:
             A list of tuples containing the signal data, and the start_time for each recording which has data during
@@ -488,7 +491,7 @@ class File:
         """
         output = []
         for rec in self.recordings:
-            data = rec.read_signal(name, start_time, end_time)
+            data = rec.read_signal(name=name, start_time=start_time, end_time=end_time, npoints=npoints)
             if data:
                 output.append(data)
         return output
