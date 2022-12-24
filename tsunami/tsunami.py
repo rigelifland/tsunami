@@ -222,7 +222,7 @@ class Signal:
                 dset = self._handle[self.base_name]
                 scale_factor = 1
             else:
-                for s in sorted(self.scales, key=lambda x: x.scale_factor, reverse=True):
+                for s in sorted(self.scales, key=lambda x: x.scale_factor, reverse=True):  # pragma: no branch
                     if s.scale_factor < requested_scale_factor:
                         break
                 dset = s._handle
